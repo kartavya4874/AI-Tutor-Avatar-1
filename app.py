@@ -85,6 +85,9 @@ if 'current_response' not in st.session_state:
 if 'message_counter' not in st.session_state:
     st.session_state.message_counter = 0
 
+if 'show_debug' not in st.session_state:
+    st.session_state.show_debug = False
+
 # Title
 st.markdown('<h1 class="main-header">🎓 AI TUTOR</h1>', unsafe_allow_html=True)
 
@@ -124,18 +127,23 @@ with col1:
             st.rerun()
         
         st.divider()
+        
+        # Debug toggle
+        st.session_state.show_debug = st.checkbox("🔧 Show Debug Logs", value=st.session_state.show_debug)
+        
+        st.divider()
         st.markdown("""
         **💡 How to use:**
         
         **Voice Input:**
-        - Click 🎤 button in video
+        - Wait for avatar to load
+        - Click 🎤 button
         - Speak your question
-        - Wait for response
         
         **Text Input:**
         - Type in box below
         - Click Send
-        - Watch avatar respond
+        - Avatar will respond
         """)
 
 with col2:
@@ -147,60 +155,68 @@ with col2:
         # Prepare response for avatar
         response_to_speak = st.session_state.current_response if st.session_state.current_response else "null"
         message_id = st.session_state.message_counter
+        show_debug = "block" if st.session_state.show_debug else "none"
         
         html_code = f"""
         <!DOCTYPE html>
         <html>
         <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
             <script src="https://cdn.jsdelivr.net/npm/microsoft-cognitiveservices-speech-sdk@latest/distrib/browser/microsoft.cognitiveservices.speech.sdk.bundle-min.js"></script>
             <style>
                 * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-                body {{
+                html, body {{
+                    width: 100%;
+                    height: 100%;
+                    overflow: hidden;
                     background-color: #000;
                     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-                    overflow: hidden;
                 }}
                 #container {{
                     width: 100%;
                     height: 600px;
                     position: relative;
-                    background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+                    background: #1a1a2e;
+                    overflow: hidden;
                 }}
                 #videoPlayer {{
                     width: 100%;
                     height: 100%;
-                    object-fit: contain;
+                    object-fit: cover;
                     background-color: #000;
-                    z-index: 1; /* FIX: ensure video is above overlays */
+                    display: block;
                 }}
                 #debugLog {{
                     position: absolute;
                     top: 60px;
-                    left: 15px;
-                    background: rgba(0,0,0,0.9);
+                    right: 15px;
+                    background: rgba(0,0,0,0.95);
                     color: #0f0;
-                    padding: 10px;
+                    padding: 8px;
                     border-radius: 5px;
-                    font-size: 11px;
-                    max-width: 400px;
-                    max-height: 200px;
+                    font-size: 9px;
+                    max-width: 280px;
+                    max-height: 120px;
                     overflow-y: auto;
-                    z-index: 101;
-                    font-family: monospace;
+                    z-index: 1000;
+                    font-family: 'Courier New', monospace;
+                    display: {show_debug};
+                    line-height: 1.3;
                 }}
                 #statusOverlay {{
                     position: absolute;
                     top: 15px;
                     left: 15px;
-                    background: rgba(0,0,0,0.85);
+                    background: rgba(0,0,0,0.9);
                     color: #fff;
-                    padding: 12px 20px;
+                    padding: 10px 18px;
                     border-radius: 8px;
-                    font-size: 14px;
-                    font-weight: 500;
-                    z-index: 100;
-                    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
-                    border: 1px solid rgba(255,255,255,0.1);
+                    font-size: 13px;
+                    font-weight: 600;
+                    z-index: 1000;
+                    box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+                    border: 1px solid rgba(255,255,255,0.15);
                 }}
                 #captionBox {{
                     position: absolute;
@@ -209,27 +225,22 @@ with col2:
                     transform: translateX(-50%);
                     width: 85%;
                     max-width: 700px;
-                    background: rgba(0,0,0,0.92);
+                    background: rgba(0,0,0,0.95);
                     color: #fff;
-                    padding: 25px 30px;
+                    padding: 20px 25px;
                     border-radius: 12px;
-                    font-size: 20px;
-                    line-height: 1.6;
+                    font-size: 18px;
+                    line-height: 1.5;
                     text-align: center;
-                    z-index: 100;
+                    z-index: 1000;
                     display: none;
-                    min-height: 70px;
-                    box-shadow: 0 6px 20px rgba(0,0,0,0.6);
-                    border: 2px solid rgba(76, 175, 80, 0.3);
-                    animation: fadeIn 0.3s ease-in;
-                }}
-                @keyframes fadeIn {{
-                    from {{ opacity: 0; transform: translateX(-50%) translateY(10px); }}
-                    to {{ opacity: 1; transform: translateX(-50%) translateY(0); }}
+                    min-height: 60px;
+                    box-shadow: 0 6px 20px rgba(0,0,0,0.7);
+                    border: 2px solid rgba(76, 175, 80, 0.4);
                 }}
                 #captionBox.user {{
-                    border-color: rgba(33, 150, 243, 0.5);
-                    background: rgba(21, 101, 192, 0.85);
+                    border-color: rgba(33, 150, 243, 0.6);
+                    background: rgba(21, 101, 192, 0.9);
                 }}
                 #micButton {{
                     position: absolute;
@@ -239,20 +250,20 @@ with col2:
                     background: linear-gradient(135deg, #1976D2 0%, #1565C0 100%);
                     color: white;
                     border: none;
-                    padding: 16px 35px;
+                    padding: 14px 32px;
                     border-radius: 30px;
                     cursor: pointer;
-                    font-size: 17px;
+                    font-size: 16px;
                     font-weight: bold;
-                    z-index: 100;
-                    box-shadow: 0 4px 15px rgba(25, 118, 210, 0.4);
-                    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+                    z-index: 1000;
+                    box-shadow: 0 4px 15px rgba(25, 118, 210, 0.5);
+                    transition: all 0.3s ease;
                     border: 2px solid rgba(255,255,255,0.2);
                 }}
                 #micButton:hover:not(:disabled) {{
                     background: linear-gradient(135deg, #1565C0 0%, #0d47a1 100%);
                     transform: translateX(-50%) scale(1.05);
-                    box-shadow: 0 6px 20px rgba(25, 118, 210, 0.6);
+                    box-shadow: 0 6px 20px rgba(25, 118, 210, 0.7);
                 }}
                 #micButton:disabled {{
                     background: linear-gradient(135deg, #666 0%, #555 100%);
@@ -264,14 +275,14 @@ with col2:
                     animation: pulse 1.5s infinite;
                 }}
                 @keyframes pulse {{
-                    0%, 100% {{ box-shadow: 0 4px 15px rgba(244, 67, 54, 0.4); }}
-                    50% {{ box-shadow: 0 4px 25px rgba(244, 67, 54, 0.8); }}
+                    0%, 100% {{ box-shadow: 0 4px 15px rgba(244, 67, 54, 0.5); }}
+                    50% {{ box-shadow: 0 4px 25px rgba(244, 67, 54, 0.9); }}
                 }}
             </style>
         </head>
         <body>
             <div id="container">
-                <video id="videoPlayer" autoplay playsinline></video>
+                <video id="videoPlayer" autoplay playsinline muted></video>
                 <div id="statusOverlay">⚙️ Initializing...</div>
                 <div id="debugLog"></div>
                 <div id="captionBox"></div>
@@ -300,56 +311,68 @@ with col2:
                 const messageId = {message_id};
                 let lastMessageId = -1;
                 
-                // Debug logging
                 function debugLog(message) {{
-                    console.log(message);
+                    console.log('[Avatar]', message);
                     const debugDiv = document.getElementById('debugLog');
-                    const timestamp = new Date().toLocaleTimeString();
-                    debugDiv.innerHTML = `[${{timestamp}}] ${{message}}<br>` + debugDiv.innerHTML;
-                    if (debugDiv.children.length > 10) {{
-                        debugDiv.removeChild(debugDiv.lastChild);
+                    if (debugDiv && debugDiv.style.display === 'block') {{
+                        const time = new Date().toLocaleTimeString();
+                        const entry = document.createElement('div');
+                        entry.textContent = `[${{time}}] ${{message}}`;
+                        debugDiv.insertBefore(entry, debugDiv.firstChild);
+                        while (debugDiv.children.length > 8) {{
+                            debugDiv.removeChild(debugDiv.lastChild);
+                        }}
                     }}
                 }}
                 
                 function updateStatus(message, emoji = '⚙️') {{
-                    document.getElementById('statusOverlay').innerHTML = emoji + ' ' + message;
+                    const statusEl = document.getElementById('statusOverlay');
+                    if (statusEl) {{
+                        statusEl.innerHTML = emoji + ' ' + message;
+                    }}
                     debugLog(`Status: ${{message}}`);
                 }}
                 
                 function showCaption(text, isUser = false) {{
                     const captionBox = document.getElementById('captionBox');
-                    captionBox.textContent = text;
-                    captionBox.className = isUser ? 'user' : '';
-                    captionBox.style.display = 'block';
+                    if (captionBox) {{
+                        captionBox.textContent = text;
+                        captionBox.className = isUser ? 'user' : '';
+                        captionBox.style.display = 'block';
+                    }}
                 }}
                 
                 function hideCaption() {{
-                    document.getElementById('captionBox').style.display = 'none';
+                    const captionBox = document.getElementById('captionBox');
+                    if (captionBox) {{
+                        captionBox.style.display = 'none';
+                    }}
                 }}
                 
                 async function initializeAvatar() {{
                     try {{
                         debugLog('Starting avatar initialization...');
-                        updateStatus('Connecting to Avatar...', '🔄');
+                        updateStatus('Connecting...', '🔄');
                         
+                        // Get ICE token
                         const tokenUrl = "{config.get_avatar_token_url()}";
-                        debugLog(`Token URL: ${{tokenUrl}}`);
+                        debugLog('Fetching ICE token...');
                         
-                        const response = await fetch(tokenUrl, {{
+                        const tokenResponse = await fetch(tokenUrl, {{
+                            method: 'POST',
                             headers: {{
                                 'Ocp-Apim-Subscription-Key': config.speechKey
                             }}
                         }});
                         
-                        debugLog(`Token response status: ${{response.status}}`);
-                        
-                        if (!response.ok) {{
-                            throw new Error('Failed to get ICE token: ' + response.status);
+                        if (!tokenResponse.ok) {{
+                            throw new Error(`Token fetch failed: ${{tokenResponse.status}}`);
                         }}
                         
-                        const tokenData = await response.json();
+                        const tokenData = await tokenResponse.json();
                         debugLog('ICE token received');
                         
+                        // Create peer connection
                         peerConnection = new RTCPeerConnection({{
                             iceServers: [{{
                                 urls: tokenData.Urls,
@@ -360,29 +383,42 @@ with col2:
                         
                         debugLog('RTCPeerConnection created');
                         
+                        // Handle incoming video/audio tracks
                         peerConnection.ontrack = (event) => {{
                             debugLog(`Track received: ${{event.track.kind}}`);
                             const videoPlayer = document.getElementById('videoPlayer');
-                            if (videoPlayer.srcObject !== event.streams[0]) {{
+                            if (videoPlayer && event.streams && event.streams[0]) {{
                                 videoPlayer.srcObject = event.streams[0];
+                                videoPlayer.muted = false; // Unmute for audio
                                 debugLog('Video stream connected to player');
                             }}
                         }};
                         
+                        // Monitor connection state
                         peerConnection.oniceconnectionstatechange = () => {{
-                            debugLog(`ICE State: ${{peerConnection.iceConnectionState}}`);
-                            if (peerConnection.iceConnectionState === 'connected') {{
+                            const state = peerConnection.iceConnectionState;
+                            debugLog(`ICE connection state: ${{state}}`);
+                            
+                            if (state === 'connected') {{
                                 updateStatus('Avatar Ready', '🟢');
                                 document.getElementById('micButton').disabled = false;
                                 isInitialized = true;
-                            }} else if (peerConnection.iceConnectionState === 'failed') {{
+                                debugLog('✅ Avatar fully connected');
+                            }} else if (state === 'failed') {{
                                 updateStatus('Connection Failed', '❌');
-                                debugLog('ICE connection failed!');
-                            }} else if (peerConnection.iceConnectionState === 'disconnected') {{
+                                debugLog('❌ ICE connection failed');
+                            }} else if (state === 'disconnected') {{
                                 updateStatus('Disconnected', '⚠️');
+                            }} else if (state === 'checking') {{
+                                updateStatus('Connecting...', '🔄');
                             }}
                         }};
                         
+                        peerConnection.onconnectionstatechange = () => {{
+                            debugLog(`Connection state: ${{peerConnection.connectionState}}`);
+                        }};
+                        
+                        // Create speech config
                         const speechConfig = SpeechSDK.SpeechConfig.fromSubscription(
                             config.speechKey, 
                             config.speechRegion
@@ -390,52 +426,67 @@ with col2:
                         speechConfig.speechSynthesisVoiceName = config.ttsVoice;
                         debugLog('Speech config created');
                         
+                        // Create avatar config
                         const avatarConfig = new SpeechSDK.AvatarConfig(
                             config.avatarCharacter, 
                             config.avatarStyle
                         );
-                        debugLog(`Avatar config: ${{config.avatarCharacter}} - ${{config.avatarStyle}}`);
+                        debugLog(`Avatar: ${{config.avatarCharacter}}-${{config.avatarStyle}}`);
                         
+                        // Set video format
                         const videoFormat = new SpeechSDK.AvatarVideoFormat();
                         videoFormat.bitrate = 2000000;
                         avatarConfig.videoFormat = videoFormat;
                         
+                        // Create synthesizer
                         avatarSynthesizer = new SpeechSDK.AvatarSynthesizer(
                             speechConfig, 
                             avatarConfig
                         );
-                        
                         debugLog('Avatar synthesizer created');
                         
-                        avatarSynthesizer.avatarEventReceived = (s, e) => {{
-                            debugLog(`Avatar event: ${{e.description}}`);
-                        }};
-                        
-                        peerConnection.addTransceiver('video', {{ direction: 'sendrecv' }});
-                        peerConnection.addTransceiver('audio', {{ direction: 'sendrecv' }});
+                        // Add transceivers BEFORE starting avatar
+                        const videoTransceiver = peerConnection.addTransceiver('video', {{ direction: 'sendrecv' }});
+                        const audioTransceiver = peerConnection.addTransceiver('audio', {{ direction: 'sendrecv' }});
                         debugLog('Transceivers added');
                         
+                        // Start avatar
                         debugLog('Starting avatar...');
-                        const result = await avatarSynthesizer.startAvatarAsync(peerConnection);
-                        debugLog(`Avatar start result: ${{result.reason}}`);
+                        updateStatus('Starting avatar...', '🎭');
                         
-                        if (result.reason === SpeechSDK.ResultReason.SynthesizingAudioCompleted) {{
-                            debugLog('✅ Avatar started successfully!');
-                            initializeSpeechRecognizer();
-                            
-                            // Speak response if available
-                            if (responseToSpeak && responseToSpeak !== 'null' && messageId > lastMessageId) {{
-                                lastMessageId = messageId;
-                                setTimeout(() => speak(responseToSpeak), 500);
+                        avatarSynthesizer.startAvatarAsync(
+                            peerConnection,
+                            (result) => {{
+                                if (result.reason === SpeechSDK.ResultReason.SynthesizingAudioCompleted) {{
+                                    debugLog('✅ Avatar started successfully');
+                                    initializeSpeechRecognizer();
+                                    
+                                    // Speak initial response if available
+                                    if (responseToSpeak && responseToSpeak !== 'null' && messageId > lastMessageId) {{
+                                        lastMessageId = messageId;
+                                        setTimeout(() => speak(responseToSpeak), 1000);
+                                    }}
+                                }} else {{
+                                    debugLog(`❌ Avatar start failed: ${{result.errorDetails}}`);
+                                    updateStatus('Failed to start', '❌');
+                                }}
+                            }},
+                            (error) => {{
+                                debugLog(`❌ Avatar error: ${{error}}`);
+                                
+                                if (error.includes('4429') || error.includes('throttled')) {{
+                                    updateStatus('Too many sessions', '⚠️');
+                                    showCaption('Please close other tabs and wait 2-3 minutes', true);
+                                }} else {{
+                                    updateStatus('Error: ' + error.substring(0, 30), '❌');
+                                }}
                             }}
-                        }} else {{
-                            throw new Error('Failed to start avatar: ' + result.errorDetails);
-                        }}
+                        );
                         
                     }} catch (error) {{
-                        debugLog(`❌ Error: ${{error.message}}`);
-                        console.error('Error initializing avatar:', error);
-                        updateStatus('Failed: ' + error.message, '❌');
+                        debugLog(`❌ Init error: ${{error.message}}`);
+                        console.error('Avatar initialization error:', error);
+                        updateStatus('Init failed', '❌');
                     }}
                 }}
                 
@@ -468,14 +519,13 @@ with col2:
                             if (e.result.reason === SpeechSDK.ResultReason.RecognizedSpeech) {{
                                 const text = e.result.text;
                                 if (text && text.trim()) {{
-                                    debugLog(`✅ Recognized: ${{text}}`);
+                                    debugLog(`Recognized: ${{text}}`);
                                     showCaption('You said: ' + text, true);
                                     sendMessageToStreamlit(text);
                                     setTimeout(stopListening, 500);
                                 }}
                             }} else if (e.result.reason === SpeechSDK.ResultReason.NoMatch) {{
-                                debugLog('No speech recognized');
-                                showCaption('No speech detected. Please try again.', true);
+                                showCaption('No speech detected', true);
                                 setTimeout(() => {{
                                     hideCaption();
                                     stopListening();
@@ -485,24 +535,19 @@ with col2:
                         
                         speechRecognizer.canceled = (s, e) => {{
                             debugLog(`Recognition canceled: ${{e.reason}}`);
-                            if (e.reason === SpeechSDK.CancellationReason.Error) {{
-                                debugLog(`Recognition error: ${{e.errorDetails}}`);
-                                updateStatus('Recognition Error', '❌');
-                            }}
                             stopListening();
                         }};
                         
-                        debugLog('Speech recognizer initialized');
+                        debugLog('Speech recognizer ready');
                     }} catch (error) {{
-                        debugLog(`❌ Recognizer error: ${{error.message}}`);
-                        console.error('Error initializing speech recognizer:', error);
-                        updateStatus('Mic Error: ' + error.message, '❌');
+                        debugLog(`Recognizer error: ${{error.message}}`);
+                        console.error('Speech recognizer error:', error);
                     }}
                 }}
                 
                 function toggleMicrophone() {{
                     if (!isInitialized) {{
-                        showCaption('Please wait, avatar is still initializing...', true);
+                        showCaption('Please wait, avatar is initializing...', true);
                         setTimeout(hideCaption, 2000);
                         return;
                     }}
@@ -516,7 +561,7 @@ with col2:
                 
                 function startListening() {{
                     if (isSpeaking) {{
-                        showCaption('⏳ Please wait for avatar to finish speaking...', true);
+                        showCaption('Wait for avatar to finish speaking...', true);
                         setTimeout(hideCaption, 2000);
                         return;
                     }}
@@ -527,17 +572,15 @@ with col2:
                             () => {{
                                 isListening = true;
                                 const button = document.getElementById('micButton');
-                                button.textContent = '🔴 Listening... (Click to stop)';
+                                button.textContent = '🔴 Listening...';
                                 button.classList.add('listening');
-                                updateStatus('Listening for your voice...', '🎤');
-                                showCaption('🎤 Listening... Speak now!', true);
-                                debugLog('✅ Speech recognition started');
+                                updateStatus('Listening...', '🎤');
+                                showCaption('🎤 Speak now!', true);
+                                debugLog('Listening started');
                             }},
                             (err) => {{
-                                debugLog(`❌ Failed to start recognition: ${{err}}`);
-                                updateStatus('Failed to start microphone', '❌');
-                                showCaption('Error: Could not start microphone', true);
-                                setTimeout(hideCaption, 3000);
+                                debugLog(`Start failed: ${{err}}`);
+                                updateStatus('Mic error', '❌');
                             }}
                         );
                     }}
@@ -552,10 +595,9 @@ with col2:
                                 button.textContent = '🎤 Click to Speak';
                                 button.classList.remove('listening');
                                 updateStatus('Avatar Ready', '🟢');
-                                debugLog('✅ Speech recognition stopped');
+                                debugLog('Listening stopped');
                             }},
                             (err) => {{
-                                debugLog(`Failed to stop recognition: ${{err}}`);
                                 isListening = false;
                             }}
                         );
@@ -565,46 +607,50 @@ with col2:
                 async function speak(text) {{
                     if (!avatarSynthesizer || !text || text === 'null') return;
                     
-                    debugLog(`Speaking: ${{text.substring(0, 50)}}...`);
+                    debugLog(`Speaking...`);
                     isSpeaking = true;
                     updateStatus('Speaking...', '💬');
                     showCaption(text, false);
                     
-                    const ssml = `<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' 
-                                   xmlns:mstts='http://www.w3.org/2001/mstts' xml:lang='en-US'>
+                    const ssml = `<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='en-US'>
                         <voice name='${{config.ttsVoice}}'>
-                            <mstts:ttsembedding speakerProfileId=''>
-                                <mstts:leadingsilence-exact value='0'/>
-                            </mstts:ttsembedding>
                             ${{text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}}
                         </voice>
                     </speak>`;
                     
                     try {{
-                        const result = await avatarSynthesizer.speakSsmlAsync(ssml);
-                        
-                        if (result.reason === SpeechSDK.ResultReason.SynthesizingAudioCompleted) {{
-                            debugLog('✅ Speech synthesis completed');
-                        }} else {{
-                            debugLog(`❌ Speech synthesis failed: ${{result.errorDetails}}`);
-                        }}
-                        
-                        setTimeout(() => {{
-                            hideCaption();
-                            isSpeaking = false;
-                            updateStatus('Avatar Ready', '🟢');
-                        }}, 1000);
-                        
+                        avatarSynthesizer.speakSsmlAsync(
+                            ssml,
+                            (result) => {{
+                                if (result.reason === SpeechSDK.ResultReason.SynthesizingAudioCompleted) {{
+                                    debugLog('Speech completed');
+                                }} else {{
+                                    debugLog(`Speech failed: ${{result.errorDetails}}`);
+                                }}
+                                
+                                setTimeout(() => {{
+                                    hideCaption();
+                                    isSpeaking = false;
+                                    updateStatus('Avatar Ready', '🟢');
+                                }}, 1000);
+                            }},
+                            (error) => {{
+                                debugLog(`Speech error: ${{error}}`);
+                                hideCaption();
+                                isSpeaking = false;
+                                updateStatus('Speech error', '❌');
+                            }}
+                        );
                     }} catch (error) {{
-                        debugLog(`❌ Error speaking: ${{error.message}}`);
+                        debugLog(`Speak error: ${{error.message}}`);
                         hideCaption();
                         isSpeaking = false;
-                        updateStatus('Speech Error', '❌');
+                        updateStatus('Error', '❌');
                     }}
                 }}
                 
                 function sendMessageToStreamlit(text) {{
-                    debugLog(`Sending to Streamlit: ${{text}}`);
+                    debugLog(`Sending to Streamlit`);
                     window.parent.postMessage({{
                         type: 'voiceInput',
                         text: text,
@@ -620,14 +666,21 @@ with col2:
                 
                 document.getElementById('micButton').addEventListener('click', toggleMicrophone);
                 
-                window.addEventListener('load', () => {{
-                    debugLog('Page loaded, initializing avatar...');
-                    setTimeout(initializeAvatar, 1200);
+                // Cleanup on unload
+                window.addEventListener('beforeunload', () => {{
+                    if (avatarSynthesizer) {{
+                        try {{ avatarSynthesizer.close(); }} catch(e) {{}}
+                    }}
+                    if (peerConnection) {{
+                        try {{ peerConnection.close(); }} catch(e) {{}}
+                    }}
                 }});
                 
-                if (responseToSpeak && responseToSpeak !== 'null') {{
-                    debugLog(`Response ready: ${{responseToSpeak.substring(0, 50)}}...`);
-                }}
+                // Start initialization
+                window.addEventListener('load', () => {{
+                    debugLog('Page loaded, initializing...');
+                    setTimeout(initializeAvatar, 1000);
+                }});
             </script>
         </body>
         </html>
@@ -659,7 +712,7 @@ with col2:
             send_clicked = st.button("📤 Send", use_container_width=True, type="primary")
         
         if send_clicked and user_input and user_input.strip():
-            with st.spinner("🤔 Thinking..."):
+            with st.spinner("🤔 Processing..."):
                 try:
                     response = st.session_state.openai_service.get_chat_response(user_input)
                     
@@ -677,8 +730,8 @@ with col2:
                     st.session_state.current_response = response
                     st.session_state.message_counter += 1
                     
-                    st.success("✅ Message sent! Avatar will respond...")
-                    time.sleep(0.5)
+                    st.success("✅ Response ready!")
+                    time.sleep(0.3)
                     st.rerun()
                     
                 except Exception as e:
@@ -712,7 +765,6 @@ components.html("""
             
             if (text !== lastReceivedText) {
                 lastReceivedText = text;
-                console.log('Voice input received:', text);
                 
                 window.parent.postMessage({
                     type: 'streamlit:setComponentValue',
