@@ -43,7 +43,6 @@ st.markdown("""
     .stTextArea textarea {
         font-size: 16px;
     }
-    /* Hide default Streamlit elements */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
 </style>
@@ -172,6 +171,22 @@ with col2:
                     height: 100%;
                     object-fit: contain;
                     background-color: #000;
+                    z-index: 1; /* FIX: ensure video is above overlays */
+                }}
+                #debugLog {{
+                    position: absolute;
+                    top: 60px;
+                    left: 15px;
+                    background: rgba(0,0,0,0.9);
+                    color: #0f0;
+                    padding: 10px;
+                    border-radius: 5px;
+                    font-size: 11px;
+                    max-width: 400px;
+                    max-height: 200px;
+                    overflow-y: auto;
+                    z-index: 101;
+                    font-family: monospace;
                 }}
                 #statusOverlay {{
                     position: absolute;
@@ -258,8 +273,9 @@ with col2:
             <div id="container">
                 <video id="videoPlayer" autoplay playsinline></video>
                 <div id="statusOverlay">⚙️ Initializing...</div>
+                <div id="debugLog"></div>
                 <div id="captionBox"></div>
-                <button id="micButton">🎤 Click to Speak</button>
+                <button id="micButton" disabled>🎤 Click to Speak</button>
             </div>
             
             <script>
@@ -284,8 +300,20 @@ with col2:
                 const messageId = {message_id};
                 let lastMessageId = -1;
                 
+                // Debug logging
+                function debugLog(message) {{
+                    console.log(message);
+                    const debugDiv = document.getElementById('debugLog');
+                    const timestamp = new Date().toLocaleTimeString();
+                    debugDiv.innerHTML = `[${{timestamp}}] ${{message}}<br>` + debugDiv.innerHTML;
+                    if (debugDiv.children.length > 10) {{
+                        debugDiv.removeChild(debugDiv.lastChild);
+                    }}
+                }}
+                
                 function updateStatus(message, emoji = '⚙️') {{
                     document.getElementById('statusOverlay').innerHTML = emoji + ' ' + message;
+                    debugLog(`Status: ${{message}}`);
                 }}
                 
                 function showCaption(text, isUser = false) {{
@@ -296,26 +324,31 @@ with col2:
                 }}
                 
                 function hideCaption() {{
-                    const captionBox = document.getElementById('captionBox');
-                    captionBox.style.display = 'none';
+                    document.getElementById('captionBox').style.display = 'none';
                 }}
                 
                 async function initializeAvatar() {{
                     try {{
+                        debugLog('Starting avatar initialization...');
                         updateStatus('Connecting to Avatar...', '🔄');
                         
                         const tokenUrl = "{config.get_avatar_token_url()}";
+                        debugLog(`Token URL: ${{tokenUrl}}`);
+                        
                         const response = await fetch(tokenUrl, {{
                             headers: {{
                                 'Ocp-Apim-Subscription-Key': config.speechKey
                             }}
                         }});
                         
+                        debugLog(`Token response status: ${{response.status}}`);
+                        
                         if (!response.ok) {{
                             throw new Error('Failed to get ICE token: ' + response.status);
                         }}
                         
                         const tokenData = await response.json();
+                        debugLog('ICE token received');
                         
                         peerConnection = new RTCPeerConnection({{
                             iceServers: [{{
@@ -325,24 +358,26 @@ with col2:
                             }}]
                         }});
                         
+                        debugLog('RTCPeerConnection created');
+                        
                         peerConnection.ontrack = (event) => {{
-                            console.log('Track received:', event.track.kind);
+                            debugLog(`Track received: ${{event.track.kind}}`);
                             const videoPlayer = document.getElementById('videoPlayer');
                             if (videoPlayer.srcObject !== event.streams[0]) {{
                                 videoPlayer.srcObject = event.streams[0];
-                                console.log('Video stream connected');
+                                debugLog('Video stream connected to player');
                             }}
                         }};
                         
                         peerConnection.oniceconnectionstatechange = () => {{
-                            console.log('ICE Connection State:', peerConnection.iceConnectionState);
+                            debugLog(`ICE State: ${{peerConnection.iceConnectionState}}`);
                             if (peerConnection.iceConnectionState === 'connected') {{
                                 updateStatus('Avatar Ready', '🟢');
                                 document.getElementById('micButton').disabled = false;
                                 isInitialized = true;
                             }} else if (peerConnection.iceConnectionState === 'failed') {{
                                 updateStatus('Connection Failed', '❌');
-                                console.error('ICE connection failed');
+                                debugLog('ICE connection failed!');
                             }} else if (peerConnection.iceConnectionState === 'disconnected') {{
                                 updateStatus('Disconnected', '⚠️');
                             }}
@@ -353,11 +388,13 @@ with col2:
                             config.speechRegion
                         );
                         speechConfig.speechSynthesisVoiceName = config.ttsVoice;
+                        debugLog('Speech config created');
                         
                         const avatarConfig = new SpeechSDK.AvatarConfig(
                             config.avatarCharacter, 
                             config.avatarStyle
                         );
+                        debugLog(`Avatar config: ${{config.avatarCharacter}} - ${{config.avatarStyle}}`);
                         
                         const videoFormat = new SpeechSDK.AvatarVideoFormat();
                         videoFormat.bitrate = 2000000;
@@ -368,18 +405,22 @@ with col2:
                             avatarConfig
                         );
                         
+                        debugLog('Avatar synthesizer created');
+                        
                         avatarSynthesizer.avatarEventReceived = (s, e) => {{
-                            console.log('Avatar event:', e.description);
+                            debugLog(`Avatar event: ${{e.description}}`);
                         }};
                         
                         peerConnection.addTransceiver('video', {{ direction: 'sendrecv' }});
                         peerConnection.addTransceiver('audio', {{ direction: 'sendrecv' }});
+                        debugLog('Transceivers added');
                         
+                        debugLog('Starting avatar...');
                         const result = await avatarSynthesizer.startAvatarAsync(peerConnection);
-                        console.log('Avatar started, result:', result.reason);
+                        debugLog(`Avatar start result: ${{result.reason}}`);
                         
                         if (result.reason === SpeechSDK.ResultReason.SynthesizingAudioCompleted) {{
-                            console.log('Avatar synthesis started successfully');
+                            debugLog('✅ Avatar started successfully!');
                             initializeSpeechRecognizer();
                             
                             // Speak response if available
@@ -392,6 +433,7 @@ with col2:
                         }}
                         
                     }} catch (error) {{
+                        debugLog(`❌ Error: ${{error.message}}`);
                         console.error('Error initializing avatar:', error);
                         updateStatus('Failed: ' + error.message, '❌');
                     }}
@@ -418,7 +460,6 @@ with col2:
                         
                         speechRecognizer.recognizing = (s, e) => {{
                             if (e.result.text) {{
-                                console.log('Recognizing:', e.result.text);
                                 showCaption('🎤 ' + e.result.text, true);
                             }}
                         }};
@@ -427,13 +468,13 @@ with col2:
                             if (e.result.reason === SpeechSDK.ResultReason.RecognizedSpeech) {{
                                 const text = e.result.text;
                                 if (text && text.trim()) {{
-                                    console.log('✅ Recognized:', text);
+                                    debugLog(`✅ Recognized: ${{text}}`);
                                     showCaption('You said: ' + text, true);
                                     sendMessageToStreamlit(text);
                                     setTimeout(stopListening, 500);
                                 }}
                             }} else if (e.result.reason === SpeechSDK.ResultReason.NoMatch) {{
-                                console.log('No speech recognized');
+                                debugLog('No speech recognized');
                                 showCaption('No speech detected. Please try again.', true);
                                 setTimeout(() => {{
                                     hideCaption();
@@ -443,17 +484,17 @@ with col2:
                         }};
                         
                         speechRecognizer.canceled = (s, e) => {{
-                            console.log('Recognition canceled:', e.reason);
+                            debugLog(`Recognition canceled: ${{e.reason}}`);
                             if (e.reason === SpeechSDK.CancellationReason.Error) {{
-                                console.error('Recognition error:', e.errorDetails);
+                                debugLog(`Recognition error: ${{e.errorDetails}}`);
                                 updateStatus('Recognition Error', '❌');
-                                showCaption('Error: ' + e.errorDetails, true);
                             }}
                             stopListening();
                         }};
                         
-                        console.log('Speech recognizer initialized');
+                        debugLog('Speech recognizer initialized');
                     }} catch (error) {{
+                        debugLog(`❌ Recognizer error: ${{error.message}}`);
                         console.error('Error initializing speech recognizer:', error);
                         updateStatus('Mic Error: ' + error.message, '❌');
                     }}
@@ -481,7 +522,6 @@ with col2:
                     }}
                     
                     if (speechRecognizer && !isListening) {{
-                        console.log('Starting speech recognition...');
                         hideCaption();
                         speechRecognizer.startContinuousRecognitionAsync(
                             () => {{
@@ -491,10 +531,10 @@ with col2:
                                 button.classList.add('listening');
                                 updateStatus('Listening for your voice...', '🎤');
                                 showCaption('🎤 Listening... Speak now!', true);
-                                console.log('✅ Speech recognition started');
+                                debugLog('✅ Speech recognition started');
                             }},
                             (err) => {{
-                                console.error('❌ Failed to start recognition:', err);
+                                debugLog(`❌ Failed to start recognition: ${{err}}`);
                                 updateStatus('Failed to start microphone', '❌');
                                 showCaption('Error: Could not start microphone', true);
                                 setTimeout(hideCaption, 3000);
@@ -505,7 +545,6 @@ with col2:
                 
                 function stopListening() {{
                     if (speechRecognizer && isListening) {{
-                        console.log('Stopping speech recognition...');
                         speechRecognizer.stopContinuousRecognitionAsync(
                             () => {{
                                 isListening = false;
@@ -513,10 +552,10 @@ with col2:
                                 button.textContent = '🎤 Click to Speak';
                                 button.classList.remove('listening');
                                 updateStatus('Avatar Ready', '🟢');
-                                console.log('✅ Speech recognition stopped');
+                                debugLog('✅ Speech recognition stopped');
                             }},
                             (err) => {{
-                                console.error('Failed to stop recognition:', err);
+                                debugLog(`Failed to stop recognition: ${{err}}`);
                                 isListening = false;
                             }}
                         );
@@ -526,7 +565,7 @@ with col2:
                 async function speak(text) {{
                     if (!avatarSynthesizer || !text || text === 'null') return;
                     
-                    console.log('Speaking:', text);
+                    debugLog(`Speaking: ${{text.substring(0, 50)}}...`);
                     isSpeaking = true;
                     updateStatus('Speaking...', '💬');
                     showCaption(text, false);
@@ -545,9 +584,9 @@ with col2:
                         const result = await avatarSynthesizer.speakSsmlAsync(ssml);
                         
                         if (result.reason === SpeechSDK.ResultReason.SynthesizingAudioCompleted) {{
-                            console.log('✅ Speech synthesis completed');
+                            debugLog('✅ Speech synthesis completed');
                         }} else {{
-                            console.error('❌ Speech synthesis failed:', result.errorDetails);
+                            debugLog(`❌ Speech synthesis failed: ${{result.errorDetails}}`);
                         }}
                         
                         setTimeout(() => {{
@@ -557,7 +596,7 @@ with col2:
                         }}, 1000);
                         
                     }} catch (error) {{
-                        console.error('❌ Error speaking:', error);
+                        debugLog(`❌ Error speaking: ${{error.message}}`);
                         hideCaption();
                         isSpeaking = false;
                         updateStatus('Speech Error', '❌');
@@ -565,8 +604,7 @@ with col2:
                 }}
                 
                 function sendMessageToStreamlit(text) {{
-                    console.log('Sending to Streamlit:', text);
-                    // Send using postMessage
+                    debugLog(`Sending to Streamlit: ${{text}}`);
                     window.parent.postMessage({{
                         type: 'voiceInput',
                         text: text,
@@ -574,9 +612,7 @@ with col2:
                     }}, '*');
                 }}
                 
-                // Listen for speak commands
                 window.addEventListener('message', (event) => {{
-                    console.log('Received message:', event.data);
                     if (event.data && event.data.type === 'speak' && event.data.text) {{
                         speak(event.data.text);
                     }}
@@ -584,15 +620,13 @@ with col2:
                 
                 document.getElementById('micButton').addEventListener('click', toggleMicrophone);
                 
-                // Initialize on load
                 window.addEventListener('load', () => {{
-                    console.log('Page loaded, initializing avatar...');
-                    setTimeout(initializeAvatar, 500);
+                    debugLog('Page loaded, initializing avatar...');
+                    setTimeout(initializeAvatar, 1200);
                 }});
                 
-                // Check for new response
                 if (responseToSpeak && responseToSpeak !== 'null') {{
-                    console.log('Response ready to speak:', responseToSpeak.substring(0, 50) + '...');
+                    debugLog(`Response ready: ${{responseToSpeak.substring(0, 50)}}...`);
                 }}
             </script>
         </body>
@@ -627,10 +661,8 @@ with col2:
         if send_clicked and user_input and user_input.strip():
             with st.spinner("🤔 Thinking..."):
                 try:
-                    # Get AI response
                     response = st.session_state.openai_service.get_chat_response(user_input)
                     
-                    # Store in chat history
                     st.session_state.chat_history.append({
                         'role': 'user',
                         'content': user_input,
@@ -642,11 +674,9 @@ with col2:
                         'timestamp': datetime.now()
                     })
                     
-                    # Set response for avatar to speak
                     st.session_state.current_response = response
                     st.session_state.message_counter += 1
                     
-                    # Clear the input
                     st.success("✅ Message sent! Avatar will respond...")
                     time.sleep(0.5)
                     st.rerun()
@@ -659,7 +689,7 @@ with col2:
     if st.session_state.session_active:
         with st.expander("📜 View Chat History", expanded=False):
             if st.session_state.chat_history:
-                for msg in reversed(st.session_state.chat_history[-10:]):  # Show last 10 messages
+                for msg in reversed(st.session_state.chat_history[-10:]):
                     timestamp = msg.get('timestamp', datetime.now()).strftime("%H:%M:%S")
                     if msg['role'] == 'user':
                         st.markdown(f"**🗣️ You** `{timestamp}`")
@@ -680,12 +710,10 @@ components.html("""
         if (event.data && event.data.type === 'voiceInput' && event.data.text) {
             const text = event.data.text;
             
-            // Prevent duplicate processing
             if (text !== lastReceivedText) {
                 lastReceivedText = text;
                 console.log('Voice input received:', text);
                 
-                // Send to Streamlit
                 window.parent.postMessage({
                     type: 'streamlit:setComponentValue',
                     key: 'voice_receiver',
@@ -694,13 +722,6 @@ components.html("""
                         timestamp: Date.now()
                     }
                 }, '*');
-                
-                // Trigger a rerun by clicking a hidden button
-                const event = new Event('click');
-                const voiceProcessButton = window.parent.document.querySelector('[data-testid="voice-process-button"]');
-                if (voiceProcessButton) {
-                    voiceProcessButton.click();
-                }
             }
         }
     });
@@ -726,7 +747,6 @@ voice_data = components.html("""
 if voice_data and isinstance(voice_data, dict) and 'text' in voice_data:
     voice_text = voice_data['text']
     
-    # Check if this is a new message
     if not hasattr(st.session_state, 'last_voice_text') or st.session_state.last_voice_text != voice_text:
         st.session_state.last_voice_text = voice_text
         
